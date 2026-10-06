@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hierro">
+  <title>Hierro</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="offline" class="offline" hidden>Sin conexión — tus entrenos se guardan y se sincronizan después</div>
+  <main id="view" class="view"></main>
+  <div id="timer" class="timer" hidden></div>
+  <nav id="tabs" class="tabs" hidden>
+    <a href="#/" data-tab="home"><span class="ti">◉</span>Entrenar</a>
+    <a href="#/rutinas" data-tab="rutinas"><span class="ti">☰</span>Rutinas</a>
+    <a href="#/historial" data-tab="historial"><span class="ti">◷</span>Historial</a>
+    <a href="#/progreso" data-tab="progreso"><span class="ti">↗</span>Progreso</a>
+    <a href="#/perfil" data-tab="perfil"><span class="ti">●</span>Perfil</a>
+  </nav>
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

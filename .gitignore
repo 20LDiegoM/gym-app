@@ -1,0 +1,11 @@
+# datos y binarios locales
+pb_data/
+pocketbase
+*.zip
+.env
+
+# python
+__pycache__/
+
+# macOS
+.DS_Store

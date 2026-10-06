@@ -1,0 +1,21 @@
+services:
+  hierro:
+    build: .
+    image: hierro:latest
+    container_name: hierro
+    restart: unless-stopped
+    environment:
+      # Código que se pide al crear cuenta. Cámbialo, o déjalo vacío para registro libre.
+      - INVITE_CODE=${INVITE_CODE:-cambia-este-codigo}
+      - TZ=America/Costa_Rica
+    volumes:
+      - ./pb_data:/pb/pb_data   # base de datos y backups: respalda esta carpeta
+    ports:
+      # Solo accesible desde la Pi; Cloudflare Tunnel llega por aquí.
+      - "127.0.0.1:${HIERRO_PORT:-8090}:8090"
+    # Si tu cloudflared corre en Docker, únelo a la misma red y apunta a http://hierro:8090
+    # networks: [cloudflared]
+
+# networks:
+#   cloudflared:
+#     external: true
