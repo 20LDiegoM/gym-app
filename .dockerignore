@@ -3,3 +3,5 @@ pocketbase
 *.zip
 .git
 README.md
+push/node_modules
+push/data

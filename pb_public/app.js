@@ -258,7 +258,8 @@ function renderAuth(mode = "login") {
   };
 }
 
-function logout() {
+async function logout() {
+  if (pushOn()) { cancelPush(); await disablePush(); }
   pb.authStore.clear();
   S.exercises = []; S.routines = []; S.workouts = []; S.active = null;
   stopTimer();
@@ -357,6 +358,7 @@ function renderActive() {
         <button class="btn sm ghost" id="plateBtn" title="Calculadora de discos">Discos</button>
       </div>
     </div>
+    ${pushBanner()}
     <div id="exList">${A.exercises.map((e, i) => exerciseBlock(e, i, u)).join("")}</div>
     ${A.exercises.length ? "" : `<div class="empty">Añade tu primer ejercicio para empezar.</div>`}
     <div class="stack" style="margin-top:16px">
@@ -365,6 +367,13 @@ function renderActive() {
       <button class="btn ghost danger block" id="discard">Descartar entreno</button>
     </div>
   `;
+  $("#pushOn")?.addEventListener("click", async (ev) => {
+    ev.target.disabled = true;
+    try { await enablePush(); toast("🔔 Listo: el descanso sonará aunque bloquees el teléfono"); }
+    catch (err) { toast(err.message || "No se pudo activar"); }
+    renderActive();
+  });
+  $("#pushNo")?.addEventListener("click", () => { LS.set(key("pushAsked"), true); renderActive(); });
   const tick = () => { const c = $("#clock"); if (c) c.textContent = `⏱ ${mmss((Date.now() - new Date(A.started)) / 1000)}`; };
   clearInterval(clockInt); tick(); clockInt = setInterval(() => { if (!$("#clock")) return clearInterval(clockInt); tick(); }, 1000);
 
@@ -409,6 +418,17 @@ function renderActive() {
     if (t.dataset.act === "menu") exerciseMenu(ei);
     if (t.dataset.act === "info") exerciseInfo(ex.exercise);
   };
+}
+
+function pushBanner() {
+  if (pushOn() || LS.get(key("pushAsked"), false)) return "";
+  if (pushSupported() && Notification.permission === "denied") return "";
+  const ios = isIOS && !isStandalone();
+  return `<div class="card notice">
+    <b>🔔 ¿Aviso cuando termine el descanso?</b>
+    <div class="sub">${ios ? "Para que suene con el teléfono bloqueado, instala Hierro: Compartir → Agregar a pantalla de inicio, y ábrela desde el ícono." : "Así suena y vibra aunque bloquees el teléfono."}</div>
+    <div class="row" style="margin-top:10px">${ios ? "" : `<button class="btn sm primary" id="pushOn">Activar</button>`}<button class="btn sm ghost" id="pushNo">${ios ? "Entendido" : "Ahora no"}</button></div>
+  </div>`;
 }
 
 function exerciseBlock(e, i, u) {
@@ -566,15 +586,86 @@ function showSummary(w, prs) {
   $("#modal").addEventListener("modalclose", () => go("#/"), { once: true });
 }
 
+// ------------------------------ avisos push ------------------------------
+// El temporizador corre en el teléfono, pero si la pantalla se bloquea el navegador
+// se duerme. Por eso la Pi manda una notificación push al terminar el descanso.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushOn = () => pushSupported() && Notification.permission === "granted" && LS.get(key("push"), false);
+
+function nextLabel() {
+  // el siguiente ejercicio con series pendientes
+  const ex = S.active?.exercises.find((e) => e.sets.some((s) => !s.done));
+  return ex ? exName(ex.exercise, ex.name) : "";
+}
+
+const b64ToBytes = (b64) => {
+  const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+};
+
+async function enablePush() {
+  if (!pushSupported()) {
+    if (isIOS && !isStandalone()) throw new Error("En iPhone primero instala la app: Compartir → Agregar a pantalla de inicio, y ábrela desde el ícono.");
+    throw new Error("Este navegador no soporta notificaciones.");
+  }
+  // iOS exige pedir el permiso directamente en el toque, antes de cualquier otra espera
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Permiso denegado. Actívalo en Ajustes → Notificaciones → Hierro.");
+  const cfg = await (await fetch("/api/gym/push-key")).json();
+  if (!cfg.enabled) throw new Error("El servidor no tiene las notificaciones activadas.");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.publicKey) });
+  const json = sub.toJSON();
+  const me = pb.authStore.record.id;
+  try {
+    const old = await pb.collection("push_subs").getFirstListItem(pb.filter("endpoint = {:e}", { e: json.endpoint }));
+    await pb.collection("push_subs").update(old.id, { sub: json });
+  } catch {
+    await pb.collection("push_subs").create({ user: me, endpoint: json.endpoint, sub: json, device: navigator.userAgent.slice(0, 200) });
+  }
+  LS.set(key("push"), true);
+}
+
+async function disablePush() {
+  LS.set(key("push"), false);
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      try {
+        const rec = await pb.collection("push_subs").getFirstListItem(pb.filter("endpoint = {:e}", { e: sub.endpoint }));
+        await pb.collection("push_subs").delete(rec.id);
+      } catch {}
+      await sub.unsubscribe();
+    }
+  } catch {}
+}
+
+function schedulePush(at, label) {
+  if (!pushOn() || !navigator.onLine) return;
+  pb.send("/api/gym/rest", { method: "POST", body: { at, label } }).catch(() => {});
+}
+function cancelPush() {
+  if (!pushOn() || !navigator.onLine) return;
+  pb.send("/api/gym/rest/cancel", { method: "POST" }).catch(() => {});
+}
+
 // ------------------------------ temporizador ------------------------------
 let timerInt, timerState = null;
 function startTimer(sec, label) {
   timerState = { end: Date.now() + sec * 1000, total: sec, label };
   LS.set(key("timer"), timerState);
+  schedulePush(timerState.end, nextLabel());
   drawTimer();
   clearInterval(timerInt); timerInt = setInterval(drawTimer, 250);
 }
-function stopTimer() { clearInterval(timerInt); timerState = null; LS.del(key("timer")); $("#timer").hidden = true; }
+function stopTimer() {
+  if (timerState && timerState.end > Date.now()) cancelPush();
+  clearInterval(timerInt); timerState = null; LS.del(key("timer")); $("#timer").hidden = true;
+}
 function drawTimer() {
   const el = $("#timer");
   if (!timerState) return (el.hidden = true);
@@ -600,6 +691,7 @@ function drawTimer() {
       timerState.end += Number(b.dataset.d) * 1000;
       timerState.total = Math.max(5, timerState.total + Number(b.dataset.d));
       LS.set(key("timer"), timerState); drawTimer();
+      schedulePush(timerState.end, nextLabel());
     }));
   }
   el.querySelector(".tv").textContent = mmss(left);
@@ -973,6 +1065,12 @@ function renderProfile() {
       <label class="f">Descanso por defecto</label>
       <div class="chips" id="restSeg">${[60, 90, 120, 150, 180].map((s) => `<button class="chip ${defaultRest() === s ? "on" : ""}" data-r="${s}">${mmss(s)}</button>`).join("")}</div>
     </div>
+    <h2>Aviso de descanso</h2>
+    <div class="card">
+      <div class="list-item"><div><b>Notificación al terminar</b><div class="sub" id="pushState"></div></div>
+        <button class="btn sm" id="pushToggle"></button></div>
+      <button class="btn sm ghost" id="pushTest" style="margin-top:10px" hidden>Probar en 5 segundos</button>
+    </div>
     <h2>Herramientas</h2>
     <div class="stack">
       <button class="btn block" id="plates">Calculadora de discos</button>
@@ -989,6 +1087,33 @@ function renderProfile() {
   };
   $("#unitSeg").onclick = (e) => { const b = e.target.closest("[data-u]"); if (b) savePref({ unit: b.dataset.u }); };
   $("#restSeg").onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) savePref({ rest_seconds: Number(b.dataset.r) }); };
+  const drawPush = () => {
+    const on = pushOn();
+    const st = !pushSupported() ? (isIOS && !isStandalone() ? "Instala la app en la pantalla de inicio para activarlo" : "No disponible en este navegador")
+      : Notification.permission === "denied" ? "Bloqueado: actívalo en Ajustes → Notificaciones → Hierro"
+      : on ? "Activado en este dispositivo" : "Desactivado";
+    $("#pushState").textContent = st;
+    const t = $("#pushToggle");
+    t.textContent = on ? "Desactivar" : "Activar";
+    t.className = `btn sm ${on ? "" : "primary"}`;
+    t.disabled = !pushSupported() || Notification.permission === "denied";
+    $("#pushTest").hidden = !on;
+  };
+  drawPush();
+  $("#pushToggle").onclick = async () => {
+    $("#pushToggle").disabled = true;
+    try {
+      if (pushOn()) { await disablePush(); toast("Avisos desactivados"); }
+      else { await enablePush(); toast("🔔 Avisos activados"); }
+    } catch (err) { toast(err.message || "No se pudo cambiar"); }
+    drawPush();
+  };
+  $("#pushTest").onclick = async () => {
+    try {
+      await pb.send("/api/gym/rest", { method: "POST", body: { at: Date.now() + 5000, label: "prueba" } });
+      toast("Bloquea el teléfono: el aviso llega en 5 s");
+    } catch { toast("No se pudo enviar la prueba"); }
+  };
   $("#plates").onclick = () => plateModal();
   $("#csv").onclick = exportCsv;
   $("#logout").onclick = () => { if (!S.active || confirm("Tienes un entreno en curso; quedará guardado en este dispositivo. ¿Salir?")) logout(); };

@@ -8,14 +8,26 @@ services:
       # Código que se pide al crear cuenta. Cámbialo, o déjalo vacío para registro libre.
       - INVITE_CODE=${INVITE_CODE:-cambia-este-codigo}
       - TZ=America/Costa_Rica
+      # Notificaciones push del descanso (servicio "push" de abajo)
+      - PUSH_URL=http://push:3000
+      - PUSH_SECRET=${PUSH_SECRET:-hierro-interno}
     volumes:
       - ./pb_data:/pb/pb_data   # base de datos y backups: respalda esta carpeta
     ports:
       # Solo accesible desde la Pi; Cloudflare Tunnel llega por aquí.
       - "127.0.0.1:${HIERRO_PORT:-8090}:8090"
-    # Si tu cloudflared corre en Docker, únelo a la misma red y apunta a http://hierro:8090
-    # networks: [cloudflared]
+    depends_on:
+      - push
 
-# networks:
-#   cloudflared:
-#     external: true
+  # Manda el aviso de "descanso terminado" aunque el teléfono esté bloqueado.
+  # No expone puertos: solo PocketBase le habla por la red interna.
+  push:
+    build: ./push
+    image: hierro-push:latest
+    container_name: hierro-push
+    restart: unless-stopped
+    environment:
+      - PUSH_SECRET=${PUSH_SECRET:-hierro-interno}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}
+    volumes:
+      - ./push_data:/data   # claves VAPID (si se borran, cada usuario debe reactivar los avisos)

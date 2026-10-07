@@ -11,6 +11,7 @@ App web (instalable en el celular) para registrar entrenos, multiusuario, corrie
 - **Récords personales**: aviso 🏆 al superar tu 1RM estimado.
 - **Progreso**: gráfica por ejercicio (1RM est., peso máx., volumen) y volumen semanal.
 - **Calculadora de discos**, kg/lb, exportar CSV.
+- **Aviso de fin de descanso** con notificación push: suena y vibra aunque el teléfono esté bloqueado.
 - **Funciona sin conexión**: el entreno en curso vive en el teléfono y se sincroniza al volver la red.
 - **Registro con código de invitación** para que solo entren los tuyos.
 - 162 ejercicios base en español (máquinas, poleas, Smith, barra, mancuernas, kettlebell, cardio), 155 con fotos e instrucciones, + ejercicios propios por usuario.
@@ -67,6 +68,16 @@ Abre `https://gym.murcia-dev.com` → crea tu cuenta con el código → menú de
 - Para cerrar el registro por completo: deja `INVITE_CODE` y además pon la regla *Create* de la colección `users` en vacío/bloqueada desde el panel.
 - **Backups**: toda la data está en `./pb_data`. Copia esa carpeta, o activa backups automáticos en el panel (Settings → Backups).
 
+## Notificaciones del descanso
+
+El contenedor `push` (Node + web-push) manda la notificación cuando termina el descanso, porque con la pantalla bloqueada el navegador del teléfono se duerme y no puede sonar por sí solo.
+
+- Las claves VAPID se generan solas la primera vez en `./push_data/`. Si se borran, cada usuario tiene que reactivar los avisos.
+- En `.env`: `PUSH_SECRET` (secreto interno) y `VAPID_SUBJECT` (tu correo, `mailto:...`).
+- **iPhone (iOS 16.4+)**: solo funciona con la app instalada en la pantalla de inicio y abierta desde el ícono. Luego en **Perfil → Aviso de descanso → Activar** (o en el aviso que sale al empezar un entreno).
+- **Android**: funciona desde Chrome, instalada o no.
+- Para probar: **Perfil → Probar en 5 segundos** y bloquea el teléfono.
+
 ## Catálogo de ejercicios
 
 - **Globales** (los ve todo el mundo): vienen en `pb_migrations/`. Para añadir o corregir, entra al panel `/_/` → colección `exercises` y edita; deja el campo `user` vacío para que sea global.
@@ -90,7 +101,8 @@ Descarga el binario de PocketBase para tu sistema desde [releases](https://githu
 
 ```
 pb_migrations/   esquema (ejercicios, rutinas, entrenos) + ejercicios base
-pb_hooks/        código de invitación y /api/gym/config
+pb_hooks/        código de invitación, /api/gym/config y puente de notificaciones
+push/            servicio de notificaciones push (Node, solo red interna)
 pb_public/       la app (HTML/CSS/JS sin build, PWA)
 Dockerfile       imagen multi-arquitectura (arm64, armv7, amd64)
 ```

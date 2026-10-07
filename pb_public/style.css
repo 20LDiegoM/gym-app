@@ -235,3 +235,7 @@ tr.done .ck { background: var(--accent); color: var(--accent-ink); border-color:
 .demo-tag { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 99px; }
 .steps { padding-left: 20px; margin: 0; color: var(--text); font-size: 15px; }
 .steps li + li { margin-top: 8px; }
+
+/* ---------- aviso ---------- */
+.card.notice { border-color: var(--accent); margin-top: 12px; }
+.card.notice .sub { margin-top: 4px; }
